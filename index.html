@@ -73,6 +73,8 @@ tfoot .pc{background:var(--soft);padding:10px 12px;text-align:left}
 .empty{padding:28px 16px;color:var(--mut);text-align:center}
 .addp{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-top:16px}
 .addp label{flex:1 1 220px}
+.bulk{margin-top:16px}.bulk form{margin-top:12px}
+textarea{width:100%;font:16px "Source Sans 3",sans-serif;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);margin:4px 0 10px;resize:vertical}
 .hidden-list{margin-top:10px;color:var(--mut);font-size:15px}
 .week{border:1px solid var(--line);border-radius:12px;margin-bottom:14px;overflow:hidden}
 .week header{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:12px 16px;background:var(--soft);flex-wrap:wrap}
@@ -141,6 +143,9 @@ tfoot .pc{background:var(--soft);padding:10px 12px;text-align:left}
       <label>Nový hráč<input id="newP" placeholder="Jméno a příjmení" autocomplete="off" maxlength="60"></label>
       <button class="btn" type="submit">Přidat hráče</button>
     </form>
+    <div class="bulk" id="bulkBox"><button class="btn ghost" type="button" id="bulkTog" aria-expanded="false">Přidat více hráčů najednou</button>
+      <form id="bulkF" hidden><label>Jména hráčů – každé na nový řádek (nebo oddělená čárkou)<textarea id="bulkT" rows="8" placeholder="Novák Petr&#10;Svoboda Jan"></textarea></label>
+      <button class="btn" type="submit" id="bulkBtn">Přidat hráče</button></form></div>
     <div class="hidden-list" id="hiddenP"></div>
   </section>
   <section id="v-weeks" hidden></section>
@@ -148,7 +153,7 @@ tfoot .pc{background:var(--soft);padding:10px 12px;text-align:left}
 </main>
 <div class="ov" id="gate"><form class="md" id="gateF">
   <h3>Vstup do pokutovníku</h3>
-  <p class="sub">Zadej kód týmu, který ti poslal správce, a své jméno. Jméno se ukáže v historii změn. Kdo zadá nový kód, založí nový pokutovník.</p>
+  <p class="sub">Zadej kód týmu, který ti poslal správce, a své jméno. Jméno se ukáže v historii změn. </p>
   <label>Kód týmu<input id="gCode" autocomplete="off" placeholder="aspoň 10 znaků, např. hranice-pokuty-7731" minlength="10" maxlength="60" required></label>
   <label style="margin-top:10px">Tvoje jméno<input id="gName" autocomplete="name" maxlength="40" required></label>
   <p class="sub" id="gErr" style="color:var(--redink);margin:10px 0 0"></p>
@@ -198,7 +203,7 @@ function render(){
   $("#sWeek").textContent=kc(wk.reduce((a,f)=>a+(+f.amount||0),0));
   $("#sAll").textContent=kc(vf.reduce((a,f)=>a+(+f.amount||0),0));
   $("#sCnt").textContent=vf.length;
-  renderGrid(vf,cm);renderQuick();renderHidden();
+  renderGrid(vf,cm);renderQuick();renderHidden();$("#bulkBox").hidden=!db||!canWrite;
   if(tab==="weeks")renderWeeks(vf,cm);
   if(tab==="log")renderLog();
   for(const el of document.querySelectorAll("#quick select,#quick input,#quick button,#addp input,#addp button"))el.disabled=!canWrite||!db;
@@ -233,6 +238,17 @@ function renderQuick(){
   qp.value=cur;
   if(!$("#qO").options.length)$("#qO").innerHTML=OFF.map(o=>`<option value="${o.id}">${esc(o.name)} (${kc(o.amt)})</option>`).join("");
   if(!$("#qD").value)$("#qD").value=today();
+}
+let bulkBusy=false;
+async function addBulk(){
+  if(bulkBusy)return;
+  const have=new Set(players.map(p=>String(p.name).trim().toLowerCase()));
+  const list=[...new Set($("#bulkT").value.split(/[\n,;]+/).map(x=>x.replace(/\s+/g," ").trim()).filter(x=>x&&x.length<=60))].filter(n=>!have.has(n.toLowerCase()));
+  if(!list.length)return toast("Žádní noví hráči k přidání.");
+  bulkBusy=true;$("#bulkBtn").disabled=true;$("#bulkBtn").textContent="Přidávám…";
+  let n=0;for(const name of list){try{await col("hraci").add({name,archived:false,who:me,at:new Date().toISOString()});n++}catch(e){fail(e);break}}
+  if(n){await addLog({type:"roster",pname:String(n)});$("#bulkT").value="";$("#bulkF").hidden=true;$("#bulkTog").setAttribute("aria-expanded","false");toast(`Přidáno ${n} hráčů.`)}
+  bulkBusy=false;$("#bulkBtn").disabled=false;$("#bulkBtn").textContent="Přidat hráče";
 }
 function renderHidden(){
   const hp=players.filter(p=>p.archived);
@@ -278,6 +294,7 @@ function logText(l){
     case"phide":return[`<span class="tag t-pl">hráč</span>`,`Skryt hráč ${esc(l.pname)}`];
     case"pay":return[`<span class="tag t-pay">zaplaceno</span>`,`${esc(l.pname)} – týden ${okDate(l.date)?weekNo(l.date)+" ("+fd(l.date)+")":""}, ${kc(l.amount)}`];
     case"unpay":return[`<span class="tag t-del">zrušeno zaplacení</span>`,`${esc(l.pname)} – týden ${okDate(l.date)?weekNo(l.date)+" ("+fd(l.date)+")":""}`];
+    case"roster":return[`<span class="tag t-pl">hráči</span>`,`Hromadně přidáno ${esc(l.pname)} hráčů`];
     case"pshow":return[`<span class="tag t-pl">hráč</span>`,`Vrácen hráč ${esc(l.pname)}`];
     default:return["",""];
   }
@@ -359,6 +376,8 @@ $("#grid").addEventListener("click",e=>{
 });
 $("#hiddenP").addEventListener("click",e=>{const b=e.target.closest("[data-restore]");if(!b||!canWrite)return;const p=players.find(x=>x.id===b.dataset.restore);if(p)updPlayer(p.id,{archived:false},{type:"pshow",pname:p.name})});
 $("#quick").addEventListener("submit",e=>{e.preventDefault();const p=$("#qP").value,o=$("#qO").value,d=$("#qD").value;if(!p){$("#qP").focus();return toast("Vyber hráče.")}if(!okDate(d))return toast("Zadej datum.");addFine(p,o,d)});
+$("#bulkTog").addEventListener("click",()=>{const f=$("#bulkF");f.hidden=!f.hidden;$("#bulkTog").setAttribute("aria-expanded",String(!f.hidden));if(!f.hidden)$("#bulkT").focus()});
+$("#bulkF").addEventListener("submit",e=>{e.preventDefault();addBulk()});
 $("#addp").addEventListener("submit",e=>{e.preventDefault();const n=$("#newP").value.trim();if(!n)return;if(activePlayers().some(p=>String(p.name).toLowerCase()===n.toLowerCase()))return toast("Tento hráč už v tabulce je.");$("#newP").value="";addPlayer(n)});
 for(const b of document.querySelectorAll("nav button"))b.addEventListener("click",()=>{
   tab=b.dataset.t;for(const x of document.querySelectorAll("nav button"))x.setAttribute("aria-selected",x===b);
@@ -377,7 +396,9 @@ function connect(code){
   $("#status").textContent="Načítám data…";
   const timer=setTimeout(()=>{if(!(loaded.p&&loaded.f))$("#status").textContent="Data se zatím nedaří načíst – zkontroluj připojení."},10000);
   const done=()=>{if(loaded.p&&loaded.f){clearTimeout(timer);$("#status").textContent="Synchronizováno · změny vidí všichni hned"}};
-  const err=e=>{clearTimeout(timer);$("#status").textContent=e&&e.code==="permission-denied"?"Přístup odmítnut – zkontroluj pravidla ve Firebase.":"Spojení s daty se přerušilo – obnov stránku."};
+  const err=e=>{clearTimeout(timer);
+    if(e&&e.code==="permission-denied"){for(const u of unsub)u();unsub=[];players=[];fines=[];logs=[];pays={};LS.set("pk_code","");$("#status").textContent="Neplatný kód týmu.";render();showGate();$("#gErr").textContent="Neplatný kód týmu – zkontroluj ho a zkus to znovu.";return}
+    $("#status").textContent="Spojení s daty se přerušilo – obnov stránku."};
   unsub.push(col("hraci").onSnapshot({includeMetadataChanges:true},s=>{players=s.docs.map(d=>({id:d.id,...d.data()})).filter(p=>typeof p.name==="string");if(!s.metadata.fromCache)loaded.p=1;done();render();drawMd()},err));
   unsub.push(col("pokuty").onSnapshot({includeMetadataChanges:true},s=>{fines=s.docs.map(d=>({id:d.id,...d.data()}));if(!s.metadata.fromCache)loaded.f=1;done();render();drawMd()},err));
   unsub.push(col("platby").onSnapshot(s=>{const m={};for(const d of s.docs)m[d.id]=d.data();pays=m;if(tab==="weeks")render()},()=>{}));
