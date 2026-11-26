@@ -50,6 +50,8 @@ label{display:block;font-size:14px;color:var(--mut);font-weight:600}
 select,input{width:100%;font:16px "Source Sans 3",sans-serif;min-height:44px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);margin-top:4px}
 button.btn{min-height:44px;padding:8px 18px;border-radius:8px;border:0;background:var(--red);color:#fff;font:700 17px "Barlow Condensed",sans-serif;letter-spacing:.3px;cursor:pointer;white-space:nowrap}
 button.ghost{background:none;color:var(--ink);border:1px solid var(--line)}
+button.danger{background:none;color:var(--redink);border:1px solid var(--redink)}
+.warn{background:var(--chip);color:var(--redink);border-radius:8px;padding:10px 12px;margin:12px 0 0;font-size:15px}
 button.link{background:none;border:0;color:var(--redink);font:600 15px "Source Sans 3",sans-serif;cursor:pointer;padding:6px;min-height:36px}
 :focus-visible{outline:3px solid #2f7cf6;outline-offset:2px}
 .wrap{overflow:auto;border:1px solid var(--line);border-radius:12px;max-height:75vh}
@@ -73,8 +75,6 @@ tfoot .pc{background:var(--soft);padding:10px 12px;text-align:left}
 .empty{padding:28px 16px;color:var(--mut);text-align:center}
 .addp{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-top:16px}
 .addp label{flex:1 1 220px}
-.bulk{margin-top:16px}.bulk summary{cursor:pointer;font-weight:700;min-height:44px;display:flex;align-items:center;color:var(--redink)}
-textarea{width:100%;font:16px "Source Sans 3",sans-serif;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);margin:4px 0 10px;resize:vertical}
 .hidden-list{margin-top:10px;color:var(--mut);font-size:15px}
 .week{border:1px solid var(--line);border-radius:12px;margin-bottom:14px;overflow:hidden}
 .week header{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:12px 16px;background:var(--soft);flex-wrap:wrap}
@@ -143,9 +143,6 @@ textarea{width:100%;font:16px "Source Sans 3",sans-serif;padding:8px 10px;border
       <label>Nový hráč<input id="newP" placeholder="Jméno a příjmení" autocomplete="off" maxlength="60"></label>
       <button class="btn" type="submit">Přidat hráče</button>
     </form>
-    <details class="bulk" id="bulkBox"><summary>Přidat více hráčů najednou</summary>
-      <form id="bulkF"><label>Jména hráčů – každé na nový řádek (nebo oddělená čárkou)<textarea id="bulkT" rows="8" placeholder="Novák Petr&#10;Svoboda Jan"></textarea></label>
-      <button class="btn" type="submit" id="bulkBtn">Přidat hráče</button></form></details>
     <div class="hidden-list" id="hiddenP"></div>
   </section>
   <section id="v-weeks" hidden></section>
@@ -203,7 +200,7 @@ function render(){
   $("#sWeek").textContent=kc(wk.reduce((a,f)=>a+(+f.amount||0),0));
   $("#sAll").textContent=kc(vf.reduce((a,f)=>a+(+f.amount||0),0));
   $("#sCnt").textContent=vf.length;
-  renderGrid(vf,cm);renderQuick();renderHidden();$("#bulkBox").hidden=!db||!canWrite;
+  renderGrid(vf,cm);renderQuick();renderHidden();
   if(tab==="weeks")renderWeeks(vf,cm);
   if(tab==="log")renderLog();
   for(const el of document.querySelectorAll("#quick select,#quick input,#quick button,#addp input,#addp button"))el.disabled=!canWrite||!db;
@@ -238,17 +235,6 @@ function renderQuick(){
   qp.value=cur;
   if(!$("#qO").options.length)$("#qO").innerHTML=OFF.map(o=>`<option value="${o.id}">${esc(o.name)} (${kc(o.amt)})</option>`).join("");
   if(!$("#qD").value)$("#qD").value=today();
-}
-let bulkBusy=false;
-async function addBulk(){
-  if(bulkBusy)return;
-  const have=new Set(players.map(p=>String(p.name).trim().toLowerCase()));
-  const list=[...new Set($("#bulkT").value.split(/[\n,;]+/).map(x=>x.replace(/\s+/g," ").trim()).filter(x=>x&&x.length<=60))].filter(n=>!have.has(n.toLowerCase()));
-  if(!list.length)return toast("Žádní noví hráči k přidání.");
-  bulkBusy=true;$("#bulkBtn").disabled=true;$("#bulkBtn").textContent="Přidávám…";
-  let n=0;for(const name of list){try{await col("hraci").add({name,archived:false,who:me,at:new Date().toISOString()});n++}catch(e){fail(e);break}}
-  if(n){await addLog({type:"roster",pname:String(n)});$("#bulkT").value="";$("#bulkBox").open=false;toast(`Přidáno ${n} hráčů.`)}
-  bulkBusy=false;$("#bulkBtn").disabled=false;$("#bulkBtn").textContent="Přidat hráče";
 }
 function renderHidden(){
   const hp=players.filter(p=>p.archived);
@@ -295,6 +281,7 @@ function logText(l){
     case"pay":return[`<span class="tag t-pay">zaplaceno</span>`,`${esc(l.pname)} – týden ${okDate(l.date)?weekNo(l.date)+" ("+fd(l.date)+")":""}, ${kc(l.amount)}`];
     case"unpay":return[`<span class="tag t-del">zrušeno zaplacení</span>`,`${esc(l.pname)} – týden ${okDate(l.date)?weekNo(l.date)+" ("+fd(l.date)+")":""}`];
     case"roster":return[`<span class="tag t-pl">hráči</span>`,`Hromadně přidáno ${esc(l.pname)} hráčů`];
+    case"pdel":return[`<span class="tag t-del">smazán hráč</span>`,`${esc(l.pname)} (pokut: ${esc(l.date)}, ${kc(l.amount)})`];
     case"pshow":return[`<span class="tag t-pl">hráč</span>`,`Vrácen hráč ${esc(l.pname)}`];
     default:return["",""];
   }
@@ -327,6 +314,18 @@ async function addPlayer(name){
   try{await col("hraci").add({name,archived:false,who:me,at:new Date().toISOString()})}catch(e){return fail(e)}
   await addLog({type:"padd",pname:name});
 }
+async function delPlayer(id){
+  const p=players.find(x=>x.id===id);if(!p)return closeMd();
+  const pf=fines.filter(f=>f.player===id),sum=pf.reduce((a,f)=>a+(+f.amount||0),0);
+  try{
+    for(const f of pf)await col("pokuty").doc(f.id).delete();
+    for(const k of Object.keys(pays))if(pays[k]&&pays[k].player===id)await col("platby").doc(k).delete();
+    await col("hraci").doc(id).delete();
+  }catch(e){if(mdState)mdState.busy=false;drawMd();return fail(e)}
+  closeMd();
+  await addLog({type:"pdel",pname:p.name,amount:sum,date:String(pf.length)});
+  toast(`Hráč ${p.name} byl smazán.`);
+}
 async function updPlayer(id,patch,logObj){
   try{await col("hraci").doc(id).update(patch)}catch(e){return fail(e)}
   await addLog(logObj);
@@ -347,14 +346,20 @@ function drawMd(){
      `<div class="foot"><span class="sub" style="margin:0">Celkem ${kc(list.reduce((a,f)=>a+(+f.amount||0),0))}</span><button class="btn ghost" data-close>Zavřít</button></div>`;
   }else{
     const p=players.find(x=>x.id===mdState.pid);if(!p)return closeMd();
-    md.innerHTML=`<h3>Upravit hráče</h3><p class="sub">Skrytý hráč zmizí z tabulky, jeho pokuty zůstanou v týdenních součtech.</p>`+
+    const pf=fines.filter(f=>f.player===p.id),psum=pf.reduce((a,f)=>a+(+f.amount||0),0);
+    md.innerHTML=`<h3>Upravit hráče</h3><p class="sub">Skrytý hráč zmizí z tabulky, jeho pokuty zůstanou v týdenních součtech. Smazání odstraní hráče i všechny jeho pokuty.</p>`+
      `<form class="row" id="mdR"><label>Jméno<input id="mdN" value="${esc(p.name)}" maxlength="60" ${canWrite?"":"disabled"}></label>${canWrite?'<button class="btn" type="submit">Uložit</button>':""}</form>`+
-     `<div class="foot">${canWrite?'<button class="btn ghost" data-hide>Skrýt z tabulky</button>':""}<button class="btn ghost" data-close>Zavřít</button></div>`;
+     (mdState.confirm?`<p class="warn">Opravdu smazat hráče <b>${esc(p.name)}</b>? Smaže se i ${pf.length} ${pf.length===1?"pokuta":pf.length>=2&&pf.length<=4?"pokuty":"pokut"} (${kc(psum)}) a jeho platby. Tohle nejde vrátit.</p>`+
+       `<div class="foot"><button class="btn ghost" data-noconf>Zpět</button><button class="btn" data-delp>${mdState.busy?"Mažu…":"Ano, smazat"}</button></div>`
+     :`<div class="foot">${canWrite?'<button class="btn ghost" data-hide>Skrýt z tabulky</button><button class="btn danger" data-askdel>Smazat hráče</button>':""}<button class="btn ghost" data-close>Zavřít</button></div>`);
   }
 }
 $("#ov").addEventListener("click",e=>{
   if(e.target.id==="ov"||e.target.closest("[data-close]"))return closeMd();
   const d=e.target.closest("[data-del]");if(d)return delFine(d.dataset.del);
+  if(e.target.closest("[data-askdel]")){mdState.confirm=true;return drawMd()}
+  if(e.target.closest("[data-noconf]")){mdState.confirm=false;return drawMd()}
+  if(e.target.closest("[data-delp]")){if(!mdState.busy){mdState.busy=true;drawMd();delPlayer(mdState.pid)}return}
   if(e.target.closest("[data-hide]")){const p=players.find(x=>x.id===mdState.pid);closeMd();if(p)updPlayer(p.id,{archived:true},{type:"phide",pname:p.name})}
 });
 $("#ov").addEventListener("submit",e=>{
@@ -376,7 +381,6 @@ $("#grid").addEventListener("click",e=>{
 });
 $("#hiddenP").addEventListener("click",e=>{const b=e.target.closest("[data-restore]");if(!b||!canWrite)return;const p=players.find(x=>x.id===b.dataset.restore);if(p)updPlayer(p.id,{archived:false},{type:"pshow",pname:p.name})});
 $("#quick").addEventListener("submit",e=>{e.preventDefault();const p=$("#qP").value,o=$("#qO").value,d=$("#qD").value;if(!p){$("#qP").focus();return toast("Vyber hráče.")}if(!okDate(d))return toast("Zadej datum.");addFine(p,o,d)});
-$("#bulkF").addEventListener("submit",e=>{e.preventDefault();addBulk()});
 $("#addp").addEventListener("submit",e=>{e.preventDefault();const n=$("#newP").value.trim();if(!n)return;if(activePlayers().some(p=>String(p.name).toLowerCase()===n.toLowerCase()))return toast("Tento hráč už v tabulce je.");$("#newP").value="";addPlayer(n)});
 for(const b of document.querySelectorAll("nav button"))b.addEventListener("click",()=>{
   tab=b.dataset.t;for(const x of document.querySelectorAll("nav button"))x.setAttribute("aria-selected",x===b);
